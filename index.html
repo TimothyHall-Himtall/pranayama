@@ -1,1 +1,504 @@
-test
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Breathwork Visualizer</title>
+  <meta name="description" content="A simple, single-file breathwork visualizer for GitHub Pages. Enter 1–10 breaths/min; visual styles animate inhale/exhale. Quotes rotate each breath, starting with Amma Sri Karunamayi." />
+  <style>
+    :root {
+      --bpm: 6;                 /* breaths per minute */
+      --cycle: 10s;             /* full breath duration (inhale+exhale) */
+      --half: 5s;               /* half cycle = inhale or exhale */
+      --ball-size: 56px;
+      --track-height: 320px;
+      --fg: #0b0f14;            /* text */
+      --muted: #5c6b7a;
+      --panel: #ffffff;
+      --panel-2: #f2f5f8;
+      --accent: #3a86ff;
+      --accent-2: #6a4cff;
+      --ring: rgba(58,134,255,.15);
+      --shadow: 0 20px 40px rgba(0,0,0,.12);
+      --radius: 18px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #eaf1f8;
+        --muted: #9fb0c2;
+        --panel: #0e141b;
+        --panel-2: #121a23;
+        --ring: rgba(255,255,255,.15);
+        --shadow: 0 20px 40px rgba(0,0,0,.35);
+      }
+      body { background: radial-gradient(1200px 800px at 80% -10%, #1a2430, #0a0f15) fixed; }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--fg); background: linear-gradient(180deg, #f7fbff, #edf2f8);
+      display: grid; place-items: center; padding: 24px;
+    }
+
+    .app {
+      width: min(1000px, 96vw);
+      background: var(--panel); border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    header {
+      padding: 22px 26px;
+      background: linear-gradient(135deg, var(--panel), var(--panel-2));
+      display: grid; gap: 6px;
+    }
+    header h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+    header p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .grid {
+      display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 22px; align-items: stretch;
+    }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--panel-2); border-radius: calc(var(--radius) - 6px); padding: 18px; }
+    .controls { display: grid; gap: 14px; }
+
+    .row { display: grid; gap: 10px; }
+    label { font-weight: 600; font-size: 14px; }
+
+    .inputs { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .inputs input[type="number"]{
+      width: 86px; padding: 10px 12px; border-radius: 10px; border: 1px solid #cad6e1; background: #fff; color: var(--fg); font-size: 16px;
+    }
+    .inputs input[type="range"]{ flex: 1; min-width: 160px; }
+    select { padding: 10px 12px; border-radius: 10px; border: 1px solid #cad6e1; background: #fff; color: var(--fg); font-size: 14px; }
+
+    input[type="range"]{ -webkit-appearance: none; height: 8px; border-radius: 999px; background: #d7e3ef; outline: none; }
+    input[type="range"]::-webkit-slider-thumb{ -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.25); cursor: pointer; }
+    input[type="range"]::-moz-range-thumb{ width: 20px; height: 20px; border: none; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.25); cursor: pointer; }
+
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat { background: #fff; border-radius: 12px; padding: 12px; border: 1px solid #e6eef6; }
+    .stat .k { font-size: 12px; color: var(--muted); }
+    .stat .v { font-weight: 700; font-size: 18px; letter-spacing: .2px; }
+
+    .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn {
+      appearance: none; border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; box-shadow: 0 8px 18px rgba(58,134,255,.25);
+    }
+    .btn.secondary { background: transparent; color: var(--fg); border: 1px solid #cbd7e3; box-shadow: none; }
+
+    .track-wrap { display: grid; place-items: center; padding: 12px; }
+
+    /* === VISUAL 1: Vertical Ball === */
+    .track { position: relative; width: 90%; max-width: 520px; height: var(--track-height); background: linear-gradient(180deg, rgba(255,255,255,.6), rgba(255,255,255,.2)); border-radius: 999px; border: 1px solid rgba(0,0,0,.06); }
+    .midline { position: absolute; left: 50%; transform: translateX(-50%); width: 80%; height: 1px; top: 50%; background: linear-gradient(90deg, transparent, var(--ring), transparent); }
+    .ball { position: absolute; left: 50%; transform: translate(-50%, 0); width: var(--ball-size); height: var(--ball-size); border-radius: 50%; background: radial-gradient(circle at 30% 30%, #fff 0%, #cddfff 45%, #aeb8ff 100%); box-shadow: 0 10px 26px rgba(0,0,0,.25); bottom: 18px; animation: breath var(--half) linear infinite alternate; will-change: transform; }
+    @keyframes breath { from { transform: translate(-50%, calc(var(--travel, -260px) * 0)); } to { transform: translate(-50%, calc(var(--travel, -260px) * 1)); } }
+    .track { --travel: calc(-1 * (var(--track-height) - var(--ball-size) - 36px)); }
+
+    /* === VISUAL 2: Breathing Circle (pulse) === */
+    .circle-wrap { position: relative; width: 90%; max-width: 520px; height: 320px; display: grid; place-items: center; }
+    .circle { width: 180px; height: 180px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ffffff, #c1d7ff); box-shadow: 0 20px 40px rgba(0,0,0,.18); animation: pulse var(--half) linear infinite alternate; }
+    @keyframes pulse { from { transform: scale(.82); filter: drop-shadow(0 8px 18px rgba(0,0,0,.12)); } to { transform: scale(1.06); filter: drop-shadow(0 20px 40px rgba(0,0,0,.25)); } }
+    .circle-ring { position: absolute; width: 260px; height: 260px; border-radius: 50%; border: 10px solid rgba(58,134,255,.18); animation: ringPulse var(--half) linear infinite alternate; }
+    @keyframes ringPulse { from { transform: scale(.9); opacity: .6; } to { transform: scale(1.05); opacity: 1; } }
+
+    /* === VISUAL 3: Pendulum (left-right) === */
+    .pendulum-wrap { position: relative; width: 90%; max-width: 560px; height: 280px; display: grid; place-items: center; }
+    .pivot { position: absolute; top: 18px; left: 50%; width: 2px; height: 0; background: transparent; transform: translateX(-50%); }
+    .arm { position: absolute; top: 18px; left: 50%; width: 2px; height: 180px; background: linear-gradient(180deg, #98b7ff, #6c8cff); transform-origin: top center; transform: translateX(-50%) rotate(-30deg); border-radius: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.5) inset; animation: swing var(--half) ease-in-out infinite alternate; }
+    .bob { position: absolute; top: 18px; left: 50%; transform: translate(-50%, 0); width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #fff, #c9d8ff); box-shadow: 0 12px 26px rgba(0,0,0,.25); }
+    .arm::after { content: ""; position: absolute; bottom: -21px; left: 50%; transform: translate(-50%, 0); width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #fff, #c9d8ff); box-shadow: 0 12px 26px rgba(0,0,0,.25); }
+    @keyframes swing { from { transform: translateX(-50%) rotate(-32deg); } to { transform: translateX(-50%) rotate(32deg); } }
+
+    /* Phase + pacing bar */
+    .phase { margin-top: 8px; text-align: center; font-weight: 700; letter-spacing: .3px; color: var(--muted); }
+    .pace-wrap { width: 90%; max-width: 560px; height: 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.08); background: #e9f0f8; overflow: hidden; margin-top: 6px; }
+    .pace { height: 100%; width: 0%; background: linear-gradient(90deg, #7ea8ff, #5a86ff); }
+
+    .quote { padding: 14px 16px; background: #fff; border: 1px solid #e6eef6; border-radius: 12px; min-height: 92px; display: grid; align-content: center; gap: 8px; position: relative; overflow: hidden; }
+    .quote .text { font-size: 16px; line-height: 1.5; }
+    .quote .by { color: var(--muted); font-size: 13px; }
+    .quote.fade { animation: fadeQuote var(--cycle) ease-in-out infinite; }
+    @keyframes fadeQuote { 0% { opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
+
+    .footer { padding: 16px 22px; color: var(--muted); font-size: 12px; display: flex; gap: 12px; align-items: center; justify-content: space-between; border-top: 1px solid rgba(0,0,0,.06); flex-wrap: wrap; }
+    .note { opacity: .9; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #eef3f9; padding: 2px 6px; border-radius: 6px; border: 1px solid #d9e4ef; color: #3a4a5a; }
+
+    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    /* Reduced motion toggle */
+    .toggle { display: inline-flex; align-items: center; gap: 8px; }
+    .toggle input { width: 36px; height: 20px; appearance: none; background: #d7e3ef; border-radius: 999px; position: relative; outline: none; cursor: pointer; }
+    .toggle input::after{ content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: 2px; left: 2px; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: left .2s ease; }
+    .toggle input:checked{ background: #b5c9e0; }
+    .toggle input:checked::after{ left: 18px; }
+
+    details { background: #fff; border: 1px solid #e6eef6; border-radius: 12px; padding: 10px 14px; }
+    details summary { cursor: pointer; font-weight: 700; list-style: none; }
+    details summary::marker { display: none; }
+    .levels { padding-left: 18px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Breathwork Visualizer">
+    <header>
+      <h1>Breathwork Visualizer</h1>
+      <p>Enter breaths per minute (1–10). Visuals animate <strong>inhale</strong> / <strong>exhale</strong>. Quotes rotate once per breath and always start with <strong>Amma Sri Karunamayi</strong>.</p>
+    </header>
+
+    <div class="grid" id="grid">
+      <!-- Controls -->
+      <section class="panel controls" aria-labelledby="controls-title">
+        <h2 id="controls-title" class="sr-only">Controls</h2>
+
+        <div class="row">
+          <label for="bpm">Breaths per minute</label>
+          <div class="inputs">
+            <input id="bpm" type="number" min="1" max="10" value="6" step="1" aria-describedby="bpm-help" />
+            <input id="bpm-range" type="range" min="1" max="10" value="6" step="1" aria-label="Breaths per minute slider" />
+          </div>
+          <small id="bpm-help" style="color:var(--muted)">Tip: use <span class="kbd">←</span>/<span class="kbd">→</span> to adjust; <span class="kbd">Space</span> to play/pause.</small>
+        </div>
+
+        <div class="row">
+          <label for="mode">Visualizer style</label>
+          <div class="inputs">
+            <select id="mode" aria-label="Visualizer style">
+              <option value="ball">1) Vertical Ball</option>
+              <option value="circle">2) Breathing Circle</option>
+              <option value="pendulum">3) Pendulum</option>
+            </select>
+            <button id="nextMode" class="btn secondary" title="Next visual">Next visual ▶</button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="k">Seconds per full breath</div>
+            <div class="v" id="stat-cycle">10.0 s</div>
+          </div>
+          <div class="stat">
+            <div class="k">Seconds per inhale / exhale</div>
+            <div class="v" id="stat-half">5.0 s</div>
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button id="toggle" class="btn" aria-pressed="true">Pause</button>
+          <button id="reset" class="btn secondary">Reset</button>
+          <label class="toggle" title="Reduce motion (accessibility)">
+            <input id="reduceMotion" type="checkbox" />
+            <span>Reduce motion</span>
+          </label>
+        </div>
+
+        <div class="row">
+          <label for="quoteBox">Inspirational quote</label>
+          <div id="quoteBox" class="quote fade" aria-live="polite" aria-atomic="true">
+            <div class="text" id="quoteText">May your breath carry peace and compassion.</div>
+            <div class="by" id="quoteBy">Amma Sri Karunamayi</div>
+          </div>
+        </div>
+
+        <details>
+          <summary>Subtle levels (Click to Expand)</summary>
+          <ul class="levels">
+            <li>disease free body</li>
+            <li>know thoughts of others</li>
+            <li>heal with a touch and won’t take on person's ailment</li>
+            <li>vedic knowledge</li>
+            <li>subtle body — can see masters in subtle plane</li>
+            <li>transportation</li>
+            <li>divine effulgent body all the time</li>
+            <li>subtle body goes outside — can go through walls</li>
+          </ul>
+        </details>
+
+      </section>
+
+      <!-- Visualizer -->
+      <section class="panel" aria-labelledby="viz-title">
+        <h2 id="viz-title" class="sr-only">Breath Visualizer</h2>
+        <div class="track-wrap" id="viz-container">
+
+          <!-- Visual 1: Ball -->
+          <div class="viz" id="viz-ball" role="img" aria-label="Vertical ball breath visual">
+            <div class="track" id="track">
+              <div class="midline" aria-hidden="true"></div>
+              <div class="ball" id="ball" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <!-- Visual 2: Circle -->
+          <div class="viz" id="viz-circle" role="img" aria-label="Breathing circle visual" style="display:none">
+            <div class="circle-wrap">
+              <div class="circle-ring" id="circleRing" aria-hidden="true"></div>
+              <div class="circle" id="circle" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <!-- Visual 3: Pendulum -->
+          <div class="viz" id="viz-pendulum" role="img" aria-label="Pendulum breath visual" style="display:none">
+            <div class="pendulum-wrap">
+              <div class="pivot" aria-hidden="true"></div>
+              <div class="arm" id="arm" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="phase" id="phase" aria-live="polite" aria-atomic="true">Inhale…</div>
+          <div class="pace-wrap"><div class="pace" id="pace" aria-hidden="true"></div></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      <div class="note">Quotes marked <em>attributed</em> or with general sources are provided as short examples. Please replace with your preferred, verified attributions/translations in the code.</div>
+      <div>
+        <span class="kbd">Space</span> Play/Pause · <span class="kbd">←/→</span> Adjust BPM · <span class="kbd">N</span> Next visual
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -----------------------
+    // Quote Bank (editable)
+    // -----------------------
+    // Always starts with the first item (Amma Sri Karunamayi).
+    const QUOTES = [
+      { by: "Amma Sri Karunamayi", text: "May your breath carry peace and compassion.", note: "attributed" },
+      { by: "Bhagavad Gita 2.47", text: "You have the right to action, but not to the fruits of action." },
+      { by: "Rig Veda 1.89.1", text: "Let noble thoughts come to us from every side." },
+      { by: "Isha Upanishad (Invocation)", text: "From fullness, fullness comes; taking fullness from fullness, fullness alone remains." },
+      { by: "Maharishi Mahesh Yogi", text: "The nature of life is to expand.", note: "attributed" },
+      { by: "Maharishi Mahesh Yogi", text: "Water the root to enjoy the fruit.", note: "attributed" },
+      { by: "Bhagavad Gita 6.5", text: "Let a person lift oneself by oneself; let one not lower oneself." },
+      { by: "Katha Upanishad", text: "Arise, awake, and stop not until the goal is reached." },
+      { by: "Yoga Vasiṣṭha", text: "Mind alone is the cause of bondage and liberation." },
+      { by: "Charles F. Lutes", text: "Meditate and grow strong.", note: "attributed" },
+      { by: "Vedic Teaching", text: "Established in Being, perform action." },
+    ];
+
+    // ---------------
+    // State & DOM
+    // ---------------
+    const elBpm = document.getElementById('bpm');
+    const elBpmRange = document.getElementById('bpm-range');
+    const elCycle = document.getElementById('stat-cycle');
+    const elHalf = document.getElementById('stat-half');
+
+    const elMode = document.getElementById('mode');
+    const elNextMode = document.getElementById('nextMode');
+
+    const elBall = document.getElementById('ball');
+    const elCircle = document.getElementById('circle');
+    const elCircleRing = document.getElementById('circleRing');
+    const elArm = document.getElementById('arm');
+
+    const elVizBall = document.getElementById('viz-ball');
+    const elVizCircle = document.getElementById('viz-circle');
+    const elVizPendulum = document.getElementById('viz-pendulum');
+
+    const elPhase = document.getElementById('phase');
+    const elPace = document.getElementById('pace');
+
+    const elToggle = document.getElementById('toggle');
+    const elReset = document.getElementById('reset');
+    const elReduce = document.getElementById('reduceMotion');
+
+    const elQuoteText = document.getElementById('quoteText');
+    const elQuoteBy = document.getElementById('quoteBy');
+    const elQuoteBox = document.getElementById('quoteBox');
+
+    const visuals = ['ball','circle','pendulum'];
+
+    let bpm = Number(localStorage.getItem('bpm')) || 6;
+    let playing = true;
+    let mode = localStorage.getItem('mode') || 'ball';
+    let halfCount = 0; // counts inhale/exhale boundaries
+    let quoteIndex = 0; // rotates per full breath
+    let quoteTimer = null;
+    let phaseAnimTarget = null; // set by setMode
+
+    // Pace bar state
+    let rafId = null;
+    let halfStart = 0;
+    let halfDurationMs = 0;
+
+    // Initialize UI
+    elBpm.value = bpm; elBpmRange.value = bpm; elMode.value = mode;
+
+    function seconds(n) { return (Math.round(n * 10) / 10).toFixed(1); }
+
+    function applyTiming() {
+      const cycle = 60 / bpm;          // seconds for full breath
+      const half = cycle / 2;          // seconds for inhale/exhale
+      document.documentElement.style.setProperty('--cycle', cycle + 's');
+      document.documentElement.style.setProperty('--half', half + 's');
+      elCycle.textContent = seconds(cycle) + ' s';
+      elHalf.textContent = seconds(half) + ' s';
+
+      // Update pace duration
+      halfDurationMs = half * 1000;
+      restartPace();
+
+      // Restart quote timer (one quote per full breath)
+      if (quoteTimer) clearInterval(quoteTimer);
+      if (playing) {
+        quoteTimer = setInterval(nextQuote, cycle * 1000);
+      }
+    }
+
+    function nextQuote() {
+      quoteIndex = (quoteIndex + 1) % QUOTES.length;
+      const q = QUOTES[quoteIndex];
+      elQuoteText.textContent = q.text;
+      elQuoteBy.textContent = q.by + (q.note ? ' · ' + q.note : '');
+    }
+
+    function startWithAmma() {
+      // Ensure we start on the Amma quote
+      quoteIndex = 0;
+      elQuoteText.textContent = QUOTES[0].text;
+      elQuoteBy.textContent = QUOTES[0].by + (QUOTES[0].note ? ' · ' + QUOTES[0].note : '');
+    }
+
+    function setBpm(v) {
+      bpm = Math.max(1, Math.min(10, Math.round(Number(v) || 6)));
+      localStorage.setItem('bpm', String(bpm));
+      elBpm.value = bpm; elBpmRange.value = bpm;
+      applyTiming();
+    }
+
+    function setPlaying(on) {
+      playing = Boolean(on);
+      // Update all visual animations
+      [elBall, elCircle, elCircleRing, elArm, elQuoteBox].forEach(el => { if(!el) return; el.style.animationPlayState = on ? 'running' : 'paused'; });
+      elToggle.textContent = on ? 'Pause' : 'Play';
+      elToggle.setAttribute('aria-pressed', String(on));
+
+      if (on) restartPace(); else cancelPace();
+
+      if (quoteTimer) clearInterval(quoteTimer);
+      if (on) {
+        const cycle = 60 / bpm;
+        quoteTimer = setInterval(nextQuote, cycle * 1000);
+      }
+    }
+
+    // Reduced motion toggle: stops visual movement but keeps timing & quote changes
+    function setReducedMotion(on) {
+      elReduce.checked = !!on;
+      if (on) {
+        [elBall, elCircle, elCircleRing, elArm].forEach(el => { if(!el) return; el.style.animation = 'none'; });
+        elPhase.textContent = 'Timer running… (motion reduced)';
+        cancelPace();
+      } else {
+        elBall.style.animation = 'breath var(--half) linear infinite alternate';
+        elCircle.style.animation = 'pulse var(--half) linear infinite alternate';
+        elCircleRing.style.animation = 'ringPulse var(--half) linear infinite alternate';
+        elArm.style.animation = 'swing var(--half) ease-in-out infinite alternate';
+        elPhase.textContent = 'Inhale…';
+        halfCount = 0;
+        restartPace();
+      }
+    }
+
+    function attachPhaseSource(el) {
+      if (phaseAnimTarget) {
+        phaseAnimTarget.removeEventListener('animationiteration', onAnimIter);
+      }
+      phaseAnimTarget = el;
+      if (phaseAnimTarget) phaseAnimTarget.addEventListener('animationiteration', onAnimIter);
+    }
+
+    function onAnimIter() {
+      if (elReduce.checked) return;
+      halfCount++;
+      const isInhale = (halfCount % 2) === 0; // toggles each half
+      elPhase.textContent = isInhale ? 'Inhale…' : 'Exhale…';
+      restartPace(); // reset the pacing bar at each half change
+    }
+
+    function setMode(newMode) {
+      mode = newMode;
+      localStorage.setItem('mode', mode);
+      elMode.value = mode;
+      // Show/hide visuals
+      elVizBall.style.display = (mode === 'ball') ? '' : 'none';
+      elVizCircle.style.display = (mode === 'circle') ? '' : 'none';
+      elVizPendulum.style.display = (mode === 'pendulum') ? '' : 'none';
+      halfCount = 0; elPhase.textContent = 'Inhale…';
+
+      // Attach phase listener to the active element that animates per half-cycle
+      if (mode === 'ball') attachPhaseSource(elBall);
+      else if (mode === 'circle') attachPhaseSource(elCircle);
+      else attachPhaseSource(elArm);
+
+      // Respect play/pause state for all animations
+      setPlaying(playing);
+    }
+
+    // Pace bar logic: fill 0%→100% each half, reset on phase change
+    function cancelPace() { if (rafId) cancelAnimationFrame(rafId); rafId = null; }
+    function restartPace() {
+      cancelPace();
+      elPace.style.width = '0%';
+      if (!playing || elReduce.checked) return;
+      halfStart = performance.now();
+      rafId = requestAnimationFrame(updatePace);
+    }
+    function updatePace(now) {
+      const elapsed = now - halfStart;
+      const t = Math.max(0, Math.min(1, elapsed / halfDurationMs));
+      elPace.style.width = (t * 100).toFixed(2) + '%';
+      if (t < 1 && playing && !elReduce.checked) {
+        rafId = requestAnimationFrame(updatePace);
+      } else {
+        // Stay at 100% until next half change triggers restartPace()
+      }
+    }
+
+    // Wire controls
+    elBpm.addEventListener('input', e => setBpm(e.target.value));
+    elBpmRange.addEventListener('input', e => setBpm(e.target.value));
+    elToggle.addEventListener('click', () => setPlaying(!playing));
+    elReset.addEventListener('click', () => { setBpm(6); startWithAmma(); setPlaying(true); setReducedMotion(false); setMode('ball'); });
+    elReduce.addEventListener('change', e => setReducedMotion(e.target.checked));
+    elMode.addEventListener('change', e => setMode(e.target.value));
+    elNextMode.addEventListener('click', () => {
+      const idx = visuals.indexOf(mode);
+      const next = visuals[(idx + 1) % visuals.length];
+      setMode(next);
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+      if (e.key === 'ArrowLeft') { setBpm(bpm - 1); }
+      if (e.key === 'ArrowRight') { setBpm(bpm + 1); }
+      if (e.key.toLowerCase() === 'n') { const idx = visuals.indexOf(mode); const next = visuals[(idx + 1) % visuals.length]; setMode(next); }
+      if (e.key.toLowerCase() === '1') setMode('ball');
+      if (e.key.toLowerCase() === '2') setMode('circle');
+      if (e.key.toLowerCase() === '3') setMode('pendulum');
+    });
+
+    // Init
+    startWithAmma();
+    applyTiming();
+
+    // Respect user system preference as a starting point
+    const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) setReducedMotion(true);
+
+    // Set initial mode and phase event
+    setMode(mode);
+
+  </script>
+</body>
+</html>
